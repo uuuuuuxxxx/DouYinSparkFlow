@@ -595,31 +595,66 @@ function resolveTargetNameArray(value: unknown, sourceName: string): string[] {
 }
 
 function parseJson(value: string, sourceName: string): unknown {
-  try {
-    const parsed = JSON.parse(value) as unknown
+  let candidate = value
+  let parseError: unknown
 
-    if (typeof parsed === 'string') {
-      const trimmedParsed = parsed.trim()
-
-      if (trimmedParsed.startsWith('[') || trimmedParsed.startsWith('{')) {
-        return JSON.parse(trimmedParsed) as unknown
-      }
-    }
-
-    return parsed
-  } catch (error) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      const decoded = JSON.parse(`"${value}"`) as unknown
+      const parsed = JSON.parse(candidate) as unknown
 
-      if (typeof decoded === 'string') {
-        return JSON.parse(decoded) as unknown
+      if (typeof parsed !== 'string') {
+        return parsed
       }
-    } catch {
-      // 旧仓库会先做 unicode_escape 解码；只有原始 JSON 失败时才尝试兼容。
+
+      candidate = parsed.trim()
+      continue
+    } catch (error) {
+      parseError ??= error
     }
 
-    throw new Error(`${sourceName} 不是有效的 JSON`, { cause: error })
+    const decoded = decodeLegacyUnicodeEscape(candidate)
+
+    if (decoded === candidate) {
+      break
+    }
+
+    candidate = decoded
   }
+
+  throw new Error(`${sourceName} 不是有效的 JSON`, { cause: parseError })
+}
+
+/**
+ * 对齐旧版 Python 的 unicode_escape 解码，兼容历史 Secret 的多层转义。
+ */
+function decodeLegacyUnicodeEscape(value: string): string {
+  return value.replace(
+    /\\(u[\dA-Fa-f]{4}|U[\dA-Fa-f]{8}|x[\dA-Fa-f]{2}|[\\'"abfnrtv])/g,
+    (match, escape: string) => {
+      if (escape.startsWith('u') || escape.startsWith('U')) {
+        return String.fromCodePoint(Number.parseInt(escape.slice(1), 16))
+      }
+
+      if (escape.startsWith('x')) {
+        return String.fromCharCode(Number.parseInt(escape.slice(1), 16))
+      }
+
+      const replacements: Record<string, string> = {
+        '\\': '\\',
+        "'": "'",
+        '"': '"',
+        a: '\u0007',
+        b: '\b',
+        f: '\f',
+        n: '\n',
+        r: '\r',
+        t: '\t',
+        v: '\u000b',
+      }
+
+      return replacements[escape] ?? match
+    },
+  )
 }
 
 /**
