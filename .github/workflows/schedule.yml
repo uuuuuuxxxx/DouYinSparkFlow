@@ -24,6 +24,12 @@ jobs:
       - name: 克隆当前仓库 (Clone current repo)
         uses: actions/checkout@v7
 
+      - name: 安装系统依赖 (Install system dependencies)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends unzip
+          rm -rf /var/lib/apt/lists/*
+
       - name: 安装 Bun (Set up Bun)
         uses: oven-sh/setup-bun@v2
         with:
