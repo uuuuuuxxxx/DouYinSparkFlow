@@ -596,8 +596,28 @@ function resolveTargetNameArray(value: unknown, sourceName: string): string[] {
 
 function parseJson(value: string, sourceName: string): unknown {
   try {
-    return JSON.parse(value) as unknown
+    const parsed = JSON.parse(value) as unknown
+
+    if (typeof parsed === 'string') {
+      const trimmedParsed = parsed.trim()
+
+      if (trimmedParsed.startsWith('[') || trimmedParsed.startsWith('{')) {
+        return JSON.parse(trimmedParsed) as unknown
+      }
+    }
+
+    return parsed
   } catch (error) {
+    try {
+      const decoded = JSON.parse(`"${value}"`) as unknown
+
+      if (typeof decoded === 'string') {
+        return JSON.parse(decoded) as unknown
+      }
+    } catch {
+      // 旧仓库会先做 unicode_escape 解码；只有原始 JSON 失败时才尝试兼容。
+    }
+
     throw new Error(`${sourceName} 不是有效的 JSON`, { cause: error })
   }
 }
