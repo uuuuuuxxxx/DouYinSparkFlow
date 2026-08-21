@@ -656,6 +656,7 @@ function decodeLegacyUnicodeEscape(value: string): string {
     },
   )
 }
+
 /**
  * 解析一言数据列表。
  */
