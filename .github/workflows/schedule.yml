@@ -43,7 +43,7 @@ jobs:
           # 逐层兼容旧仓库 user-data 环境里已经保存的 Cookie 和任务配置。
           DOUYIN_COOKIE: ${{ secrets.COOKIES_CHEN4RL }}
           DOUYIN_TARGET_NAMES: ${{ toJSON(fromJSON(vars.TASKS)[0].targets) }}
-          SPARK_MESSAGE_TEMPLATE: ${{ vars.MESSAGE_TEMPLATE }}
+          SPARK_MESSAGE_TEMPLATE: "[猪头]"
           YIYAN_INCLUDE_SOURCE: "false"
         run: bun src/main.ts
 
