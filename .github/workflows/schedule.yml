@@ -1,44 +1,68 @@
-name: DouYin Spark Flow Schedule Run
+name: 🚀 抖音续火（新版）
+
 on:
-  workflow_dispatch: # 允许手动触发
-  schedule: # 定时任务
-    - cron: "0 17 * * *" # 每天 17:00 UTC（对应北京时间 1:00）
+  workflow_dispatch:
+  schedule:
+    - cron: "0 17 * * *"
+
 jobs:
-  run-main:
-    timeout-minutes: 20
-    runs-on: ubuntu-latest
+  run:
+    runs-on: ubuntu-22.04
     environment: user-data
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.0-jammy
+    timeout-minutes: 30
+    env:
+      MAIL_ADDRESS: ${{ secrets.MAIL_ADDRESS }}
+
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    - name: Test Douyin Accessibility
-      run: |
-        curl -I https://creator.douyin.com/
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    - name: Ensure browsers are installed
-      run: playwright install chromium --with-deps --only-shell
-    - name: Export Github Environment Variables and Secrets to JSON
-      env:
-        VARS_JSON: ${{ toJson(vars) }}
-        SECRETS_JSON: ${{ toJson(secrets) }}
-      run: python utils/export_github_env.py
-    - name: Run DouYin Spark Flow
-      run: python main.py
-    - uses: actions/upload-artifact@v4
-      if: ${{ !cancelled() }}
-      with:
-        name: run-logs
-        path: logs/
-  workflow-keepalive:
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    steps:
-      - uses: liskin/gh-workflow-keepalive@v1
+      - name: 克隆当前仓库 (Clone current repo)
+        uses: actions/checkout@v7
+
+      - name: 安装 Bun (Set up Bun)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: 安装运行时依赖 (Install dependencies)
+        run: bun install --production --ignore-scripts
+
+      - name: 续一次火 (Run spark job)
+        env:
+          # 兼容旧仓库 user-data 环境中已经保存的 Cookie 和任务配置。
+          DOUYIN_COOKIE: ${{ secrets.COOKIES_CHEN4RL }}
+          DOUYIN_TARGET_NAMES: ${{ toJSON(fromJSON(vars.TASKS)[0].targets) }}
+          SPARK_MESSAGE_TEMPLATE: ${{ vars.MESSAGE_TEMPLATE }}
+          YIYAN_INCLUDE_SOURCE: "false"
+        run: bun src/main.ts
+
+      - name: 保存失败截图
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-screenshots
+          path: artifacts/*.png
+          if-no-files-found: ignore
+
+      - name: 发送失败邮件 (Send failure email)
+        if: ${{ failure() && env.MAIL_ADDRESS != '' }}
+        uses: dawidd6/action-send-mail@v18
+        with:
+          server_address: smtp.qq.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: 抖音续火任务失败
+          to: ${{ secrets.MAIL_ADDRESS }}
+          from: ${{ secrets.MAIL_ADDRESS }}
+          attachments: artifacts/*.png
+          body: |
+            抖音续火任务执行失败
+            仓库：${{ github.repository }}
+            运行链接：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            如确认配置无误后仍然失败，请在上游仓库发送 issue：
+            https://github.com/bling-yshs/douyin-auto-spark/issues
+
+#      - name: Setup tmate session
+#        uses: mxschmitt/action-tmate@v3
