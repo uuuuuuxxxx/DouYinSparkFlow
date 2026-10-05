@@ -11,6 +11,11 @@ import type { DouyinCookie, SameSite } from './types/douyin-cookie'
 import type { Yiyan } from './types/yiyan'
 import { CHAT_SEARCH_SELECTOR, waitForChatPageReady } from './auth'
 import { prepareOrSubmitMessage, resolveDryRun } from './message'
+import {
+  readDailySparkMessages,
+  resolveSparkMessageMode,
+  selectDailySparkMessage,
+} from './daily-message'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -58,6 +63,9 @@ async function main(): Promise<void> {
   const headless = resolveHeadless()
   const autoClose = resolveAutoClose()
   const dryRun = resolveDryRun()
+  const messageMode = resolveSparkMessageMode()
+  const dailyMessage =
+    messageMode === 'daily' ? selectDailySparkMessage(await readDailySparkMessages()) : undefined
   const includeYiyanSource = resolveYiyanIncludeSource()
   const globalMessageTemplate = resolveSparkMessageTemplate()
   const accounts = resolveDouyinAccounts(globalMessageTemplate)
@@ -71,7 +79,15 @@ async function main(): Promise<void> {
   try {
     for (const account of accounts) {
       try {
-        await runDouyinAccount(browser, account, yiyans, includeYiyanSource, autoClose, dryRun)
+        await runDouyinAccount(
+          browser,
+          account,
+          yiyans,
+          includeYiyanSource,
+          autoClose,
+          dryRun,
+          dailyMessage,
+        )
       } catch (error) {
         const accountError = toError(error)
         failures.push(
@@ -109,6 +125,7 @@ async function main(): Promise<void> {
  * @param includeYiyanSource 默认消息是否包含一言出处。
  * @param autoClose 执行结束后是否自动关闭浏览器上下文。
  * @param dryRun 是否只验证页面和会话，不输入或发送消息。
+ * @param dailyMessage 按北京时间当天选定的轮换消息，设置时覆盖原模板。
  * @returns 账号执行完成后的 Promise。
  */
 async function runDouyinAccount(
@@ -118,6 +135,7 @@ async function runDouyinAccount(
   includeYiyanSource: boolean,
   autoClose: boolean,
   dryRun: boolean,
+  dailyMessage: string | undefined,
 ): Promise<void> {
   const context = await browser.newContext()
   let page: Page | undefined
@@ -167,7 +185,9 @@ async function runDouyinAccount(
         .first()
       let message: string
 
-      if (account.messageTemplate !== undefined) {
+      if (dailyMessage !== undefined) {
+        message = dailyMessage
+      } else if (account.messageTemplate !== undefined) {
         message = renderMessageTemplate(
           account.messageTemplate,
           account.name,

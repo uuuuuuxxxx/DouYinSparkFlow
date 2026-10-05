@@ -49,6 +49,7 @@ jobs:
           DOUYIN_COOKIE: ${{ secrets.COOKIES_CHEN4RL }}
           DOUYIN_TARGET_NAMES: ${{ toJSON(fromJSON(vars.TASKS)[0].targets) }}
           SPARK_MESSAGE_TEMPLATE: "[猪头]"
+          SPARK_MESSAGE_MODE: "daily"
           YIYAN_INCLUDE_SOURCE: "false"
           # 发布工作流变更触发的 push 也只验证；定时执行照常发送。
           DRY_RUN: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
