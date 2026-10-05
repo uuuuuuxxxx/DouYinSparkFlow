@@ -1,0 +1,36 @@
+name: 🧪 PR 检查
+
+on:
+  pull_request:
+
+jobs:
+  run:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - name: 克隆当前仓库 (Clone current repo)
+        uses: actions/checkout@v7
+
+      - name: 安装 pnpm (Set up pnpm)
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.19.0
+
+      - name: 安装 Node.js (Set up Node.js)
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖 (Install dependencies)
+        run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: "0"
+
+      - name: 安装离线测试浏览器 (Install fixture browser)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: 运行检查 (Run check)
+        # 回归测试仅加载本地 HTML，不访问抖音或发送消息。
+        run: pnpm check
