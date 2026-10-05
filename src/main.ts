@@ -11,11 +11,17 @@ import type { DouyinCookie, SameSite } from './types/douyin-cookie'
 import type { Yiyan } from './types/yiyan'
 import { CHAT_SEARCH_SELECTOR, waitForChatPageReady } from './auth'
 import { prepareOrSubmitMessage, resolveDryRun } from './message'
+import { normalizeConversationSearchQuery } from './search-query'
 import {
   readDailySparkMessages,
   resolveSparkMessageMode,
   selectDailySparkMessage,
 } from './daily-message'
+import {
+  prepareOrSubmitOfficialEmoji,
+  selectDailyOfficialEmoji,
+  type OfficialEmojiName,
+} from './official-emoji'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -66,6 +72,7 @@ async function main(): Promise<void> {
   const messageMode = resolveSparkMessageMode()
   const dailyMessage =
     messageMode === 'daily' ? selectDailySparkMessage(await readDailySparkMessages()) : undefined
+  const officialEmoji = messageMode === 'official-emoji' ? selectDailyOfficialEmoji() : undefined
   const includeYiyanSource = resolveYiyanIncludeSource()
   const globalMessageTemplate = resolveSparkMessageTemplate()
   const accounts = resolveDouyinAccounts(globalMessageTemplate)
@@ -87,6 +94,7 @@ async function main(): Promise<void> {
           autoClose,
           dryRun,
           dailyMessage,
+          officialEmoji,
         )
       } catch (error) {
         const accountError = toError(error)
@@ -126,6 +134,7 @@ async function main(): Promise<void> {
  * @param autoClose 执行结束后是否自动关闭浏览器上下文。
  * @param dryRun 是否只验证页面和会话，不输入或发送消息。
  * @param dailyMessage 按北京时间当天选定的轮换消息，设置时覆盖原模板。
+ * @param officialEmoji 按北京时间当天选定的官方表情，设置时仅点击表情项提交。
  * @returns 账号执行完成后的 Promise。
  */
 async function runDouyinAccount(
@@ -136,6 +145,7 @@ async function runDouyinAccount(
   autoClose: boolean,
   dryRun: boolean,
   dailyMessage: string | undefined,
+  officialEmoji: OfficialEmojiName | undefined,
 ): Promise<void> {
   const context = await browser.newContext()
   let page: Page | undefined
@@ -143,7 +153,7 @@ async function runDouyinAccount(
   try {
     console.log(`开始执行账号：${account.name}`)
     if (dryRun) {
-      console.log(`[${account.name}] 无发送验证：仅检查登录、好友与编辑器，不输入或发送消息`)
+      console.log(`[${account.name}] 无发送验证：仅检查登录、好友与消息组件，不输入或发送消息`)
     }
     await context.addCookies(account.cookies)
 
@@ -183,6 +193,17 @@ async function runDouyinAccount(
           '.messageEditorimChatEditorContainer [data-slate-editor="true"][contenteditable="true"]',
         )
         .first()
+      if (officialEmoji !== undefined) {
+        await editorInput.waitFor({ state: 'visible', timeout: 10000 })
+        await prepareOrSubmitOfficialEmoji(page, officialEmoji, dryRun)
+        console.log(
+          dryRun
+            ? `[${account.name}] 官方表情「${officialEmoji}」验证通过，未点击或发送：${targetName}`
+            : `[${account.name}] 已提交官方表情「${officialEmoji}」：${targetName}`,
+        )
+        await page.waitForTimeout(1000)
+        continue
+      }
       let message: string
 
       if (dailyMessage !== undefined) {
@@ -288,7 +309,7 @@ async function searchConversation(
       .waitFor({ state: 'hidden', timeout: SEARCH_RESULT_TIMEOUT })
       .catch(() => {})
     await page.waitForTimeout(SEARCH_INPUT_RESET_DELAY)
-    await searchInput.fill(targetName)
+    await searchInput.fill(normalizeConversationSearchQuery(targetName))
 
     const searchResultVisible = await searchResult
       .waitFor({ state: 'visible', timeout: SEARCH_RESULT_TIMEOUT })
