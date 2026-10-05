@@ -9,6 +9,8 @@ import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
 import type { DouyinCookie, SameSite } from './types/douyin-cookie'
 import type { Yiyan } from './types/yiyan'
+import { CHAT_SEARCH_SELECTOR, waitForChatPageReady } from './auth'
+import { prepareOrSubmitMessage, resolveDryRun } from './message'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
@@ -55,6 +57,7 @@ async function main(): Promise<void> {
   const browserPath = resolveBrowserPath()
   const headless = resolveHeadless()
   const autoClose = resolveAutoClose()
+  const dryRun = resolveDryRun()
   const includeYiyanSource = resolveYiyanIncludeSource()
   const globalMessageTemplate = resolveSparkMessageTemplate()
   const accounts = resolveDouyinAccounts(globalMessageTemplate)
@@ -68,7 +71,7 @@ async function main(): Promise<void> {
   try {
     for (const account of accounts) {
       try {
-        await runDouyinAccount(browser, account, yiyans, includeYiyanSource, autoClose)
+        await runDouyinAccount(browser, account, yiyans, includeYiyanSource, autoClose, dryRun)
       } catch (error) {
         const accountError = toError(error)
         failures.push(
@@ -105,6 +108,7 @@ async function main(): Promise<void> {
  * @param yiyans 可供消息模板使用的一言列表。
  * @param includeYiyanSource 默认消息是否包含一言出处。
  * @param autoClose 执行结束后是否自动关闭浏览器上下文。
+ * @param dryRun 是否只验证页面和会话，不输入或发送消息。
  * @returns 账号执行完成后的 Promise。
  */
 async function runDouyinAccount(
@@ -113,12 +117,16 @@ async function runDouyinAccount(
   yiyans: Yiyan[],
   includeYiyanSource: boolean,
   autoClose: boolean,
+  dryRun: boolean,
 ): Promise<void> {
   const context = await browser.newContext()
   let page: Page | undefined
 
   try {
     console.log(`开始执行账号：${account.name}`)
+    if (dryRun) {
+      console.log(`[${account.name}] 无发送验证：仅检查登录、好友与编辑器，不输入或发送消息`)
+    }
     await context.addCookies(account.cookies)
 
     page = await context.newPage()
@@ -126,15 +134,8 @@ async function runDouyinAccount(
       waitUntil: 'domcontentloaded',
     })
 
-    const searchInput = page.locator('input.semi-input[placeholder="搜索"]').first()
-    const searchVisible = await searchInput
-      .waitFor({ state: 'visible', timeout: CHAT_PAGE_READY_TIMEOUT })
-      .then(() => true)
-      .catch(() => false)
-
-    if (!searchVisible) {
-      throw new Error('聊天页搜索框未出现，Cookie 可能已经失效')
-    }
+    await waitForChatPageReady(page, CHAT_PAGE_READY_TIMEOUT)
+    const searchInput = page.locator(CHAT_SEARCH_SELECTOR).first()
 
     await waitForChatListReady(page, account.name)
 
@@ -164,9 +165,6 @@ async function runDouyinAccount(
           '.messageEditorimChatEditorContainer [data-slate-editor="true"][contenteditable="true"]',
         )
         .first()
-      await editorInput.waitFor({ state: 'visible', timeout: 10000 })
-      await editorInput.click()
-
       let message: string
 
       if (account.messageTemplate !== undefined) {
@@ -181,9 +179,12 @@ async function runDouyinAccount(
         message = includeYiyanSource ? `${yiyan.hitokoto}\n——「${yiyan.from}」` : yiyan.hitokoto
       }
 
-      await page.keyboard.insertText(message)
-      await page.keyboard.press('Enter')
-      console.log(`[${account.name}] 已发送消息：${targetName}`)
+      await prepareOrSubmitMessage(editorInput, page.keyboard, message, dryRun)
+      console.log(
+        dryRun
+          ? `[${account.name}] 好友与编辑器验证通过，未输入或发送消息：${targetName}`
+          : `[${account.name}] 已提交消息：${targetName}`,
+      )
       await page.waitForTimeout(1000)
     }
 
@@ -197,7 +198,7 @@ async function runDouyinAccount(
       )
     }
 
-    console.log(`账号执行完成：${account.name}`)
+    console.log(dryRun ? `账号无发送验证完成：${account.name}` : `账号执行完成：${account.name}`)
   } catch (error) {
     await captureFailureScreenshot(page, account.name)
     throw error

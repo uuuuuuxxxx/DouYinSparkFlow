@@ -2,6 +2,11 @@ name: 🚀 抖音续火（新版）
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "仅验证登录、好友和编辑器，不发送消息"
+        type: boolean
+        default: true
   push:
     branches:
       - main
@@ -45,6 +50,8 @@ jobs:
           DOUYIN_TARGET_NAMES: ${{ toJSON(fromJSON(vars.TASKS)[0].targets) }}
           SPARK_MESSAGE_TEMPLATE: "[猪头]"
           YIYAN_INCLUDE_SOURCE: "false"
+          # 发布工作流变更触发的 push 也只验证；定时执行照常发送。
+          DRY_RUN: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
         run: bun src/main.ts
 
       - name: 保存失败截图
